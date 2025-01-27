@@ -9674,90 +9674,149 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
 }
 
 inline bool SSLClient::load_certs() {
+  LOGD << "HTTPLIB Entering SSLClient::load_certs function";
+
   auto ret = true;
 
   std::call_once(initialize_cert_, [&]() {
+    LOGD << "HTTPLIB Initializing certificates (one-time operation)";
     std::lock_guard<std::mutex> guard(ctx_mutex_);
+    LOGD << "HTTPLIB Acquired SSL context mutex";
+
     if (!ca_cert_file_path_.empty()) {
+      LOGD << "HTTPLIB Loading CA certificates from file: "
+           << ca_cert_file_path_;
       if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
                                          nullptr)) {
+        LOGE << "HTTPLIB Failed to load CA certificates from file: "
+             << ca_cert_file_path_;
         ret = false;
+      } else {
+        LOGD << "HTTPLIB Successfully loaded CA certificates from file: "
+             << ca_cert_file_path_;
       }
     } else if (!ca_cert_dir_path_.empty()) {
+      LOGD << "HTTPLIB Loading CA certificates from directory: "
+           << ca_cert_dir_path_;
       if (!SSL_CTX_load_verify_locations(ctx_, nullptr,
                                          ca_cert_dir_path_.c_str())) {
+        LOGE << "HTTPLIB Failed to load CA certificates from directory: "
+             << ca_cert_dir_path_;
         ret = false;
+      } else {
+        LOGD << "HTTPLIB Successfully loaded CA certificates from directory: "
+             << ca_cert_dir_path_;
       }
     } else {
+      LOGD << "HTTPLIB No CA certificate file or directory specified, "
+              "attempting to load system certificates";
       auto loaded = false;
 #ifdef _WIN32
+      LOGD << "HTTPLIB Attempting to load system certificates on Windows";
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
 #if TARGET_OS_OSX
+      LOGD << "HTTPLIB Attempting to load system certificates on macOS";
       loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
 #endif // TARGET_OS_OSX
 #endif // _WIN32
-      if (!loaded) { SSL_CTX_set_default_verify_paths(ctx_); }
+      if (!loaded) {
+        LOGD << "HTTPLIB Failed to load system certificates, falling back to "
+                "default verify paths";
+        SSL_CTX_set_default_verify_paths(ctx_);
+        LOGD << "HTTPLIB Set default verify paths";
+      } else {
+        LOGD << "HTTPLIB Successfully loaded system certificates";
+      }
     }
   });
 
+  LOGD << "HTTPLIB Exiting SSLClient::load_certs function, result: " << ret;
   return ret;
 }
 
 inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
+  LOGD << "HTTPLIB Entering SSLClient::initialize_ssl function";
+
   auto ssl = detail::ssl_new(
       socket.sock, ctx_, ctx_mutex_,
       [&](SSL *ssl2) {
+        LOGD << "HTTPLIB SSL object created, performing SSL initialization "
+                "steps";
+
         if (server_certificate_verification_) {
+          LOGD << "HTTPLIB Server certificate verification is enabled";
           if (!load_certs()) {
+            LOGE << "HTTPLIB Failed to load certificates";
             error = Error::SSLLoadingCerts;
             return false;
           }
+          LOGD << "HTTPLIB Certificates loaded successfully";
           SSL_set_verify(ssl2, SSL_VERIFY_NONE, nullptr);
+          LOGD << "HTTPLIB SSL verification set to SSL_VERIFY_NONE";
         }
 
+        LOGD << "HTTPLIB Attempting SSL connection (non-blocking)";
         if (!detail::ssl_connect_or_accept_nonblocking(
                 socket.sock, ssl2, SSL_connect, connection_timeout_sec_,
                 connection_timeout_usec_)) {
+          LOGE << "HTTPLIB SSL connection failed";
           error = Error::SSLConnection;
           return false;
         }
+        LOGD << "HTTPLIB SSL connection established successfully";
 
         if (server_certificate_verification_) {
+          LOGD << "HTTPLIB Performing server certificate verification";
           if (server_certificate_verifier_) {
+            LOGD << "HTTPLIB Using custom server certificate verifier";
             if (!server_certificate_verifier_(ssl2)) {
+              LOGE << "HTTPLIB Custom server certificate verification failed";
               error = Error::SSLServerVerification;
               return false;
             }
+            LOGD << "HTTPLIB Custom server certificate verification succeeded";
           } else {
+            LOGD << "HTTPLIB Using default server certificate verification";
             verify_result_ = SSL_get_verify_result(ssl2);
+            LOGD << "HTTPLIB SSL verification result: " << verify_result_;
 
             if (verify_result_ != X509_V_OK) {
+              LOGE << "HTTPLIB Server certificate verification failed, result: "
+                   << verify_result_;
               error = Error::SSLServerVerification;
               return false;
             }
+            LOGD << "HTTPLIB Server certificate verification succeeded";
 
             auto server_cert = SSL_get1_peer_certificate(ssl2);
             auto se = detail::scope_exit([&] { X509_free(server_cert); });
+            LOGD << "HTTPLIB Retrieved server certificate";
 
             if (server_cert == nullptr) {
+              LOGE << "HTTPLIB Server certificate is null";
               error = Error::SSLServerVerification;
               return false;
             }
 
             if (server_hostname_verification_) {
+              LOGD << "HTTPLIB Performing server hostname verification";
               if (!verify_host(server_cert)) {
+                LOGE << "HTTPLIB Server hostname verification failed";
                 error = Error::SSLServerHostnameVerification;
                 return false;
               }
+              LOGD << "HTTPLIB Server hostname verification succeeded";
             }
           }
         }
 
+        LOGD << "HTTPLIB SSL initialization completed successfully";
         return true;
       },
       [&](SSL *ssl2) {
+        LOGD << "HTTPLIB Setting TLS hostname extension";
 #if defined(OPENSSL_IS_BORINGSSL)
         SSL_set_tlsext_host_name(ssl2, host_.c_str());
 #else
@@ -9766,14 +9825,17 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         SSL_ctrl(ssl2, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
                  static_cast<void *>(const_cast<char *>(host_.c_str())));
 #endif
+        LOGD << "HTTPLIB TLS hostname extension set to: " << host_;
         return true;
       });
 
   if (ssl) {
+    LOGD << "HTTPLIB SSL object initialized successfully";
     socket.ssl = ssl;
     return true;
   }
 
+  LOGE << "HTTPLIB SSL initialization failed";
   shutdown_socket(socket);
   close_socket(socket);
   return false;
