@@ -3774,7 +3774,17 @@ inline socket_t create_client_socket(
           LOGD << "HTTPLIB Binding to interface: " << ip_from_if;
           if (!bind_ip_address(sock2, ip_from_if)) {
             error = Error::BindIPAddress;
-            LOGE << "HTTPLIB Failed to bind to interface: " << ip_from_if;
+#ifdef _WIN32
+            int error_code = WSAGetLastError();
+            char buffer[256];
+            FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, error_code, 0,
+                           buffer, sizeof(buffer), nullptr);
+            LOGE << "HTTPLIB Failed to bind to interface: " << ip_from_if
+                 << ", error: " << buffer;
+#else
+            LOGE << "HTTPLIB Failed to bind to interface: " << ip_from_if
+                 << ", error: " << strerror(errno);
+#endif
             return false;
           }
           LOGD << "HTTPLIB Successfully bound to interface: " << ip_from_if;
@@ -3797,8 +3807,15 @@ inline socket_t create_client_socket(
         if (ret < 0) {
           if (is_connection_error()) {
             error = Error::Connection;
-            LOGE << "HTTPLIB Connection failed with error: "
-                 << get_last_socket_error();
+#ifdef _WIN32
+            int error_code = WSAGetLastError();
+            char buffer[256];
+            FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, error_code, 0,
+                           buffer, sizeof(buffer), nullptr);
+            LOGE << "HTTPLIB Connection failed with error: " << buffer;
+#else
+            LOGE << "HTTPLIB Connection failed with error: " << strerror(errno);
+#endif
             return false;
           }
           LOGD << "HTTPLIB Connection in progress, waiting for socket to be "
@@ -3869,8 +3886,15 @@ inline socket_t create_client_socket(
     LOGD << "HTTPLIB Client socket created successfully: " << sock;
   } else {
     if (error == Error::Success) { error = Error::Connection; }
-    LOGE << "HTTPLIB Failed to create client socket: "
-         << static_cast<int>(error);
+#ifdef _WIN32
+    int error_code = WSAGetLastError();
+    char buffer[256];
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, error_code, 0, buffer,
+                   sizeof(buffer), nullptr);
+    LOGE << "HTTPLIB Failed to create client socket: " << buffer;
+#else
+    LOGE << "HTTPLIB Failed to create client socket: " << strerror(errno);
+#endif
   }
 
   return sock;
