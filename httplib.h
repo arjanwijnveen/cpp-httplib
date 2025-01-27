@@ -7644,27 +7644,39 @@ inline bool ClientImpl::is_ssl_peer_could_be_closed(SSL *ssl) const {
   return !SSL_peek(ssl, buf, 1) &&
          SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
 }
-#endif
 
+#endif
 inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
+  LOGD << "HTTPLIB Entering send_ function";
+
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
+    LOGD << "HTTPLIB Acquired socket mutex";
 
     // Set this to false immediately - if it ever gets set to true by the end of
     // the request, we know another thread instructed us to close the socket.
     socket_should_be_closed_when_request_is_done_ = false;
+    LOGD << "HTTPLIB Reset socket_should_be_closed_when_request_is_done_ to "
+            "false";
 
     auto is_alive = false;
     if (socket_.is_open()) {
+      LOGD << "HTTPLIB Socket is open, checking if it is alive";
       is_alive = detail::is_socket_alive(socket_.sock);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       if (is_alive && is_ssl()) {
-        if (is_ssl_peer_could_be_closed(socket_.ssl)) { is_alive = false; }
+        LOGD << "HTTPLIB Checking if SSL peer could be closed";
+        if (is_ssl_peer_could_be_closed(socket_.ssl)) {
+          is_alive = false;
+          LOGD << "HTTPLIB SSL peer could be closed, marking socket as not "
+                  "alive";
+        }
       }
 #endif
 
       if (!is_alive) {
+        LOGD << "HTTPLIB Socket is not alive, shutting down and closing socket";
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there
         // cannot be any requests in flight from other threads since we locked
@@ -7673,24 +7685,42 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
         shutdown_ssl(socket_, shutdown_gracefully);
         shutdown_socket(socket_);
         close_socket(socket_);
+        LOGD << "HTTPLIB Socket shutdown and closed";
       }
     }
 
     if (!is_alive) {
-      if (!create_and_connect_socket(socket_, error)) { return false; }
+      LOGD << "HTTPLIB Socket is not alive, creating and connecting a new "
+              "socket";
+      if (!create_and_connect_socket(socket_, error)) {
+        LOGE << "HTTPLIB Failed to create and connect socket, error: "
+             << static_cast<int>(error);
+        return false;
+      }
+      LOGD << "HTTPLIB Successfully created and connected socket";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       // TODO: refactoring
       if (is_ssl()) {
+        LOGD << "HTTPLIB Initializing SSL for the new socket";
         auto &scli = static_cast<SSLClient &>(*this);
         if (!proxy_host_.empty() && proxy_port_ != -1) {
+          LOGD << "HTTPLIB Connecting with proxy";
           auto success = false;
           if (!scli.connect_with_proxy(socket_, res, success, error)) {
+            LOGE << "HTTPLIB Failed to connect with proxy, error: "
+                 << static_cast<int>(error);
             return success;
           }
+          LOGD << "HTTPLIB Successfully connected with proxy";
         }
 
-        if (!scli.initialize_ssl(socket_, error)) { return false; }
+        if (!scli.initialize_ssl(socket_, error)) {
+          LOGE << "HTTPLIB Failed to initialize SSL, error: "
+               << static_cast<int>(error);
+          return false;
+        }
+        LOGD << "HTTPLIB Successfully initialized SSL";
       }
 #endif
     }
@@ -7703,42 +7733,76 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     }
     socket_requests_in_flight_ += 1;
     socket_requests_are_from_thread_ = std::this_thread::get_id();
+    LOGD << "HTTPLIB Marked socket as in use, requests in flight: "
+         << socket_requests_in_flight_;
   }
 
+  // Log request details
+  LOGD << "HTTPLIB Request details:";
+  LOGD << "  Method: " << req.method;
+  LOGD << "  Path: " << req.path;
+  LOGD << "  Headers:";
+  for (const auto &header : req.headers) {
+    LOGD << "    " << header.first << ": " << header.second;
+  }
+  if (!req.body.empty()) { LOGD << "  Body: " << req.body; }
+
+  // Add default headers to the request
   for (const auto &header : default_headers_) {
     if (req.headers.find(header.first) == req.headers.end()) {
       req.headers.insert(header);
+      LOGD << "HTTPLIB Added default header: " << header.first << ": "
+           << header.second;
     }
   }
 
   auto ret = false;
   auto close_connection = !keep_alive_;
+  LOGD << "HTTPLIB close_connection flag set to: " << close_connection;
 
   auto se = detail::scope_exit([&]() {
+    LOGD << "HTTPLIB Entering scope_exit cleanup";
     // Briefly lock mutex in order to mark that a request is no longer ongoing
     std::lock_guard<std::mutex> guard(socket_mutex_);
+    LOGD << "HTTPLIB Acquired socket mutex for cleanup";
     socket_requests_in_flight_ -= 1;
+    LOGD << "HTTPLIB Decremented requests in flight to: "
+         << socket_requests_in_flight_;
     if (socket_requests_in_flight_ <= 0) {
       assert(socket_requests_in_flight_ == 0);
       socket_requests_are_from_thread_ = std::thread::id();
+      LOGD << "HTTPLIB Reset socket_requests_are_from_thread_";
     }
 
     if (socket_should_be_closed_when_request_is_done_ || close_connection ||
         !ret) {
+      LOGD << "HTTPLIB Closing socket due to one of the following conditions:";
+      LOGD << "  socket_should_be_closed_when_request_is_done_: "
+           << socket_should_be_closed_when_request_is_done_;
+      LOGD << "  close_connection: " << close_connection;
+      LOGD << "  ret: " << ret;
       shutdown_ssl(socket_, true);
       shutdown_socket(socket_);
       close_socket(socket_);
+      LOGD << "HTTPLIB Socket shutdown and closed";
     }
+    LOGD << "HTTPLIB Exiting scope_exit cleanup";
   });
 
+  LOGD << "HTTPLIB Processing socket";
   ret = process_socket(socket_, [&](Stream &strm) {
+    LOGD << "HTTPLIB Handling request";
     return handle_request(strm, req, res, close_connection, error);
   });
 
   if (!ret) {
     if (error == Error::Success) { error = Error::Unknown; }
+    LOGE << "HTTPLIB Request failed, error: " << static_cast<int>(error);
+  } else {
+    LOGD << "HTTPLIB Request succeeded";
   }
 
+  LOGD << "HTTPLIB Exiting send_ function";
   return ret;
 }
 
