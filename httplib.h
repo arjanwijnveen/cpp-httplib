@@ -1574,7 +1574,7 @@ protected:
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  bool server_certificate_verification_ = true;
+  bool server_certificate_verification_ = false;
   bool server_hostname_verification_ = true;
   std::function<bool(SSL *ssl)> server_certificate_verifier_;
 #endif
