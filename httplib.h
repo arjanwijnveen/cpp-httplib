@@ -3610,11 +3610,29 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 inline void set_nonblocking(socket_t sock, bool nonblocking) {
 #ifdef _WIN32
   auto flags = nonblocking ? 1UL : 0UL;
-  ioctlsocket(sock, FIONBIO, &flags);
+  if (ioctlsocket(sock, FIONBIO, &flags) == SOCKET_ERROR) {
+    LPSTR messageBuffer = nullptr;
+    size_t size = FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&messageBuffer, 0, NULL);
+    std::string error_message(messageBuffer, size);
+    LocalFree(messageBuffer);
+    LOGE << "HTTPLIB set_nonblocking failed with: " << error_message;
+  } else {
+    LOGI << "HTTPLIB set_nonblocking succeeded, nonblocking: " << nonblocking;
+  }
 #else
   auto flags = fcntl(sock, F_GETFL, 0);
-  fcntl(sock, F_SETFL,
-        nonblocking ? (flags | O_NONBLOCK) : (flags & (~O_NONBLOCK)));
+  if (fcntl(sock, F_SETFL,
+            nonblocking ? (flags | O_NONBLOCK) : (flags & (~O_NONBLOCK))) ==
+      -1) {
+    std::string error_message = strerror(errno);
+    LOGE << "HTTPLIB set_nonblocking failed with: " << error_message;
+  } else {
+    LOGI << "HTTPLIB set_nonblocking succeeded, nonblocking: " << nonblocking;
+  }
 #endif
 }
 
@@ -3632,9 +3650,9 @@ inline bool is_connection_error() {
         (LPSTR)&messageBuffer, 0, NULL);
     error_message = std::string(messageBuffer, size);
     LocalFree(messageBuffer);
+ 
+    LOGE << "HTTPLIB Connection failed with: " << error_message;
   }
-
-  LOGE << "is_connection_error: " << hasError << ", " << error_message;
 
   return hasError;
 #else
@@ -3645,7 +3663,7 @@ inline bool is_connection_error() {
     if (hasError) { 
         error_message = strerror(errno); 
 
-        LOGE << "is_connection_error: " << hasError << ", " << error_message;
+        LOGE << "HTTPLIB Connection failed with: " << error_message;
     }
 
     return hasError
@@ -3725,22 +3743,53 @@ inline socket_t create_client_socket(
     time_t connection_timeout_usec, time_t read_timeout_sec,
     time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, const std::string &intf, Error &error) {
+
+  // Log input parameters
+  LOGD << "HTTPLIB create_client_socket called with parameters:";
+  LOGD << "  host: " << host;
+  LOGD << "  ip: " << ip;
+  LOGD << "  port: " << port;
+  LOGD << "  address_family: " << address_family;
+  LOGD << "  tcp_nodelay: " << tcp_nodelay;
+  LOGD << "  ipv6_v6only: " << ipv6_v6only;
+  LOGD << "  connection_timeout_sec: " << connection_timeout_sec;
+  LOGD << "  connection_timeout_usec: " << connection_timeout_usec;
+  LOGD << "  read_timeout_sec: " << read_timeout_sec;
+  LOGD << "  read_timeout_usec: " << read_timeout_usec;
+  LOGD << "  write_timeout_sec: " << write_timeout_sec;
+  LOGD << "  write_timeout_usec: " << write_timeout_usec;
+  LOGD << "  intf: " << intf;
+
   auto sock = create_socket(
       host, ip, port, address_family, 0, tcp_nodelay, ipv6_v6only,
       std::move(socket_options),
       [&](socket_t sock2, struct addrinfo &ai, bool &quit) -> bool {
+        // Log socket creation
+        LOGD << "HTTPLIB Socket created: " << sock2;
+
         if (!intf.empty()) {
 #ifdef USE_IF2IP
           auto ip_from_if = if2ip(address_family, intf);
           if (ip_from_if.empty()) { ip_from_if = intf; }
+          LOGD << "HTTPLIB Binding to interface: " << ip_from_if;
           if (!bind_ip_address(sock2, ip_from_if)) {
             error = Error::BindIPAddress;
+            LOGE << "HTTPLIB Failed to bind to interface: " << ip_from_if;
             return false;
           }
+          LOGD << "HTTPLIB Successfully bound to interface: " << ip_from_if;
 #endif
         }
 
+        // Set socket to non-blocking mode
+        LOGD << "HTTPLIB Setting socket to non-blocking mode";
         set_nonblocking(sock2, true);
+
+        // Log connection attempt
+        LOGD << "HTTPLIB Connecting to " << host << " (" << ip << ") on port "
+             << port << " using socket " << sock2 << " with timeout "
+             << connection_timeout_sec << "s and " << connection_timeout_usec
+             << "us";
 
         auto ret =
             ::connect(sock2, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
@@ -3748,56 +3797,80 @@ inline socket_t create_client_socket(
         if (ret < 0) {
           if (is_connection_error()) {
             error = Error::Connection;
+            LOGE << "HTTPLIB Connection failed with error: "
+                 << get_last_socket_error();
             return false;
           }
+          LOGD << "HTTPLIB Connection in progress, waiting for socket to be "
+                  "ready";
           error = wait_until_socket_is_ready(sock2, connection_timeout_sec,
                                              connection_timeout_usec);
           if (error != Error::Success) {
-            if (error == Error::ConnectionTimeout) { quit = true; }
+            if (error == Error::ConnectionTimeout) {
+              LOGE << "HTTPLIB Connection timed out";
+              quit = true;
+            } else {
+              LOGE << "HTTPLIB Error while waiting for socket: "
+                   << static_cast<int>(error);
+            }
             return false;
           }
         }
 
+        // Set socket back to blocking mode
+        LOGD << "HTTPLIB Setting socket to blocking mode";
         set_nonblocking(sock2, false);
 
+        // Set read timeout
         {
 #ifdef _WIN32
           auto timeout = static_cast<uint32_t>(read_timeout_sec * 1000 +
                                                read_timeout_usec / 1000);
+          LOGD << "HTTPLIB Setting read timeout to " << timeout << "ms";
           setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
                      reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
           tv.tv_sec = static_cast<long>(read_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
+          LOGD << "HTTPLIB Setting read timeout to " << tv.tv_sec << "s and "
+               << tv.tv_usec << "us";
           setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
                      reinterpret_cast<const void *>(&tv), sizeof(tv));
 #endif
         }
-        {
 
+        // Set write timeout
+        {
 #ifdef _WIN32
           auto timeout = static_cast<uint32_t>(write_timeout_sec * 1000 +
                                                write_timeout_usec / 1000);
+          LOGD << "HTTPLIB Setting write timeout to " << timeout << "ms";
           setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
                      reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
           tv.tv_sec = static_cast<long>(write_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
+          LOGD << "HTTPLIB Setting write timeout to " << tv.tv_sec << "s and "
+               << tv.tv_usec << "us";
           setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
                      reinterpret_cast<const void *>(&tv), sizeof(tv));
 #endif
         }
 
         error = Error::Success;
+        LOGD << "HTTPLIB Connection established successfully";
         return true;
       });
 
   if (sock != INVALID_SOCKET) {
     error = Error::Success;
+    LOGD << "HTTPLIB Client socket created successfully: " << sock;
   } else {
     if (error == Error::Success) { error = Error::Connection; }
+    LOGE << "HTTPLIB Failed to create client socket: "
+         << static_cast<int>(error);
   }
 
   return sock;
