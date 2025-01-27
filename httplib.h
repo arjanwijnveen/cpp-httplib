@@ -184,6 +184,8 @@ using ssize_t = long;
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include <plog/Log.h>
+
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
 #endif
@@ -3618,9 +3620,35 @@ inline void set_nonblocking(socket_t sock, bool nonblocking) {
 
 inline bool is_connection_error() {
 #ifdef _WIN32
-  return WSAGetLastError() != WSAEWOULDBLOCK;
+  bool hasError = WSAGetLastError() != WSAEWOULDBLOCK;   
+
+  std::string error_message;
+  if (hasError) {
+    LPSTR messageBuffer = nullptr;
+    size_t size = FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&messageBuffer, 0, NULL);
+    error_message = std::string(messageBuffer, size);
+    LocalFree(messageBuffer);
+  }
+
+  LOGE << "is_connection_error: " << hasError << ", " << error_message;
+
+  return hasError;
 #else
-  return errno != EINPROGRESS;
+    bool hasError = errno != EINPROGRESS;
+
+    std::string error_message;
+
+    if (hasError) { 
+        error_message = strerror(errno); 
+
+        LOGE << "is_connection_error: " << hasError << ", " << error_message;
+    }
+
+    return hasError
 #endif
 }
 
