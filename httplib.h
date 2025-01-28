@@ -3666,7 +3666,7 @@ inline bool is_connection_error() {
         LOGE << "HTTPLIB Connection failed with: " << error_message;
     }
 
-    return hasError
+    return hasError;
 #endif
 }
 
