@@ -7745,7 +7745,6 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   for (const auto &header : req.headers) {
     LOGV << "    " << header.first << ": " << header.second;
   }
-  if (!req.body.empty()) { LOGV << "  Body: " << req.body; }
 
   // Add default headers to the request
   for (const auto &header : default_headers_) {
