@@ -10,6 +10,8 @@
 
 #define CPPHTTPLIB_VERSION "0.18.5"
 
+#include <plog/Log.h>
+
 /*
  * Configuration
  */
@@ -183,8 +185,6 @@ using ssize_t = long;
 #include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-
-#include <plog/Log.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
