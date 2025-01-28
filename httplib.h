@@ -3621,7 +3621,7 @@ inline void set_nonblocking(socket_t sock, bool nonblocking) {
     LocalFree(messageBuffer);
     LOGE << "HTTPLIB set_nonblocking failed with: " << error_message;
   } else {
-    LOGI << "HTTPLIB set_nonblocking succeeded, nonblocking: " << nonblocking;
+    LOGV << "HTTPLIB set_nonblocking succeeded, nonblocking: " << nonblocking;
   }
 #else
   auto flags = fcntl(sock, F_GETFL, 0);
@@ -3631,7 +3631,7 @@ inline void set_nonblocking(socket_t sock, bool nonblocking) {
     std::string error_message = strerror(errno);
     LOGE << "HTTPLIB set_nonblocking failed with: " << error_message;
   } else {
-    LOGI << "HTTPLIB set_nonblocking succeeded, nonblocking: " << nonblocking;
+    LOGV << "HTTPLIB set_nonblocking succeeded, nonblocking: " << nonblocking;
   }
 #endif
 }
@@ -3745,33 +3745,33 @@ inline socket_t create_client_socket(
     time_t write_timeout_usec, const std::string &intf, Error &error) {
 
   // Log input parameters
-  LOGD << "HTTPLIB create_client_socket called with parameters:";
-  LOGD << "  host: " << host;
-  LOGD << "  ip: " << ip;
-  LOGD << "  port: " << port;
-  LOGD << "  address_family: " << address_family;
-  LOGD << "  tcp_nodelay: " << tcp_nodelay;
-  LOGD << "  ipv6_v6only: " << ipv6_v6only;
-  LOGD << "  connection_timeout_sec: " << connection_timeout_sec;
-  LOGD << "  connection_timeout_usec: " << connection_timeout_usec;
-  LOGD << "  read_timeout_sec: " << read_timeout_sec;
-  LOGD << "  read_timeout_usec: " << read_timeout_usec;
-  LOGD << "  write_timeout_sec: " << write_timeout_sec;
-  LOGD << "  write_timeout_usec: " << write_timeout_usec;
-  LOGD << "  intf: " << intf;
+  LOGV << "HTTPLIB create_client_socket called with parameters:";
+  LOGV << "  host: " << host;
+  LOGV << "  ip: " << ip;
+  LOGV << "  port: " << port;
+  LOGV << "  address_family: " << address_family;
+  LOGV << "  tcp_nodelay: " << tcp_nodelay;
+  LOGV << "  ipv6_v6only: " << ipv6_v6only;
+  LOGV << "  connection_timeout_sec: " << connection_timeout_sec;
+  LOGV << "  connection_timeout_usec: " << connection_timeout_usec;
+  LOGV << "  read_timeout_sec: " << read_timeout_sec;
+  LOGV << "  read_timeout_usec: " << read_timeout_usec;
+  LOGV << "  write_timeout_sec: " << write_timeout_sec;
+  LOGV << "  write_timeout_usec: " << write_timeout_usec;
+  LOGV << "  intf: " << intf;
 
   auto sock = create_socket(
       host, ip, port, address_family, 0, tcp_nodelay, ipv6_v6only,
       std::move(socket_options),
       [&](socket_t sock2, struct addrinfo &ai, bool &quit) -> bool {
         // Log socket creation
-        LOGD << "HTTPLIB Socket created: " << sock2;
+        LOGV << "HTTPLIB Socket created: " << sock2;
 
         if (!intf.empty()) {
 #ifdef USE_IF2IP
           auto ip_from_if = if2ip(address_family, intf);
           if (ip_from_if.empty()) { ip_from_if = intf; }
-          LOGD << "HTTPLIB Binding to interface: " << ip_from_if;
+          LOGV << "HTTPLIB Binding to interface: " << ip_from_if;
           if (!bind_ip_address(sock2, ip_from_if)) {
             error = Error::BindIPAddress;
 #ifdef _WIN32
@@ -3787,16 +3787,16 @@ inline socket_t create_client_socket(
 #endif
             return false;
           }
-          LOGD << "HTTPLIB Successfully bound to interface: " << ip_from_if;
+          LOGV << "HTTPLIB Successfully bound to interface: " << ip_from_if;
 #endif
         }
 
         // Set socket to non-blocking mode
-        LOGD << "HTTPLIB Setting socket to non-blocking mode";
+        LOGV << "HTTPLIB Setting socket to non-blocking mode";
         set_nonblocking(sock2, true);
 
         // Log connection attempt
-        LOGD << "HTTPLIB Connecting to " << host << " (" << ip << ") on port "
+        LOGV << "HTTPLIB Connecting to " << host << " (" << ip << ") on port "
              << port << " using socket " << sock2 << " with timeout "
              << connection_timeout_sec << "s and " << connection_timeout_usec
              << "us";
@@ -3818,7 +3818,7 @@ inline socket_t create_client_socket(
 #endif
             return false;
           }
-          LOGD << "HTTPLIB Connection in progress, waiting for socket to be "
+          LOGV << "HTTPLIB Connection in progress, waiting for socket to be "
                   "ready";
           error = wait_until_socket_is_ready(sock2, connection_timeout_sec,
                                              connection_timeout_usec);
@@ -3835,7 +3835,7 @@ inline socket_t create_client_socket(
         }
 
         // Set socket back to blocking mode
-        LOGD << "HTTPLIB Setting socket to blocking mode";
+        LOGV << "HTTPLIB Setting socket to blocking mode";
         set_nonblocking(sock2, false);
 
         // Set read timeout
@@ -3843,14 +3843,14 @@ inline socket_t create_client_socket(
 #ifdef _WIN32
           auto timeout = static_cast<uint32_t>(read_timeout_sec * 1000 +
                                                read_timeout_usec / 1000);
-          LOGD << "HTTPLIB Setting read timeout to " << timeout << "ms";
+          LOGV << "HTTPLIB Setting read timeout to " << timeout << "ms";
           setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
                      reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
           tv.tv_sec = static_cast<long>(read_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-          LOGD << "HTTPLIB Setting read timeout to " << tv.tv_sec << "s and "
+          LOGV << "HTTPLIB Setting read timeout to " << tv.tv_sec << "s and "
                << tv.tv_usec << "us";
           setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
                      reinterpret_cast<const void *>(&tv), sizeof(tv));
@@ -3862,14 +3862,14 @@ inline socket_t create_client_socket(
 #ifdef _WIN32
           auto timeout = static_cast<uint32_t>(write_timeout_sec * 1000 +
                                                write_timeout_usec / 1000);
-          LOGD << "HTTPLIB Setting write timeout to " << timeout << "ms";
+          LOGV << "HTTPLIB Setting write timeout to " << timeout << "ms";
           setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
                      reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
           tv.tv_sec = static_cast<long>(write_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
-          LOGD << "HTTPLIB Setting write timeout to " << tv.tv_sec << "s and "
+          LOGV << "HTTPLIB Setting write timeout to " << tv.tv_sec << "s and "
                << tv.tv_usec << "us";
           setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
                      reinterpret_cast<const void *>(&tv), sizeof(tv));
@@ -3877,13 +3877,13 @@ inline socket_t create_client_socket(
         }
 
         error = Error::Success;
-        LOGD << "HTTPLIB Connection established successfully";
+        LOGV << "HTTPLIB Connection established successfully";
         return true;
       });
 
   if (sock != INVALID_SOCKET) {
     error = Error::Success;
-    LOGD << "HTTPLIB Client socket created successfully: " << sock;
+    LOGV << "HTTPLIB Client socket created successfully: " << sock;
   } else {
     if (error == Error::Success) { error = Error::Connection; }
 #ifdef _WIN32
@@ -7647,36 +7647,36 @@ inline bool ClientImpl::is_ssl_peer_could_be_closed(SSL *ssl) const {
 
 #endif
 inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
-  LOGD << "HTTPLIB Entering send_ function";
+  LOGV << "HTTPLIB Entering send_ function";
 
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    LOGD << "HTTPLIB Acquired socket mutex";
+    LOGV << "HTTPLIB Acquired socket mutex";
 
     // Set this to false immediately - if it ever gets set to true by the end of
     // the request, we know another thread instructed us to close the socket.
     socket_should_be_closed_when_request_is_done_ = false;
-    LOGD << "HTTPLIB Reset socket_should_be_closed_when_request_is_done_ to "
+    LOGV << "HTTPLIB Reset socket_should_be_closed_when_request_is_done_ to "
             "false";
 
     auto is_alive = false;
     if (socket_.is_open()) {
-      LOGD << "HTTPLIB Socket is open, checking if it is alive";
+      LOGV << "HTTPLIB Socket is open, checking if it is alive";
       is_alive = detail::is_socket_alive(socket_.sock);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       if (is_alive && is_ssl()) {
-        LOGD << "HTTPLIB Checking if SSL peer could be closed";
+        LOGV << "HTTPLIB Checking if SSL peer could be closed";
         if (is_ssl_peer_could_be_closed(socket_.ssl)) {
           is_alive = false;
-          LOGD << "HTTPLIB SSL peer could be closed, marking socket as not "
+          LOGV << "HTTPLIB SSL peer could be closed, marking socket as not "
                   "alive";
         }
       }
 #endif
 
       if (!is_alive) {
-        LOGD << "HTTPLIB Socket is not alive, shutting down and closing socket";
+        LOGV << "HTTPLIB Socket is not alive, shutting down and closing socket";
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there
         // cannot be any requests in flight from other threads since we locked
@@ -7685,34 +7685,34 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
         shutdown_ssl(socket_, shutdown_gracefully);
         shutdown_socket(socket_);
         close_socket(socket_);
-        LOGD << "HTTPLIB Socket shutdown and closed";
+        LOGV << "HTTPLIB Socket shutdown and closed";
       }
     }
 
     if (!is_alive) {
-      LOGD << "HTTPLIB Socket is not alive, creating and connecting a new "
+      LOGV << "HTTPLIB Socket is not alive, creating and connecting a new "
               "socket";
       if (!create_and_connect_socket(socket_, error)) {
         LOGE << "HTTPLIB Failed to create and connect socket, error: "
              << static_cast<int>(error);
         return false;
       }
-      LOGD << "HTTPLIB Successfully created and connected socket";
+      LOGV << "HTTPLIB Successfully created and connected socket";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       // TODO: refactoring
       if (is_ssl()) {
-        LOGD << "HTTPLIB Initializing SSL for the new socket";
+        LOGV << "HTTPLIB Initializing SSL for the new socket";
         auto &scli = static_cast<SSLClient &>(*this);
         if (!proxy_host_.empty() && proxy_port_ != -1) {
-          LOGD << "HTTPLIB Connecting with proxy";
+          LOGV << "HTTPLIB Connecting with proxy";
           auto success = false;
           if (!scli.connect_with_proxy(socket_, res, success, error)) {
             LOGE << "HTTPLIB Failed to connect with proxy, error: "
                  << static_cast<int>(error);
             return success;
           }
-          LOGD << "HTTPLIB Successfully connected with proxy";
+          LOGV << "HTTPLIB Successfully connected with proxy";
         }
 
         if (!scli.initialize_ssl(socket_, error)) {
@@ -7720,7 +7720,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
                << static_cast<int>(error);
           return false;
         }
-        LOGD << "HTTPLIB Successfully initialized SSL";
+        LOGV << "HTTPLIB Successfully initialized SSL";
       }
 #endif
     }
@@ -7733,65 +7733,65 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     }
     socket_requests_in_flight_ += 1;
     socket_requests_are_from_thread_ = std::this_thread::get_id();
-    LOGD << "HTTPLIB Marked socket as in use, requests in flight: "
+    LOGV << "HTTPLIB Marked socket as in use, requests in flight: "
          << socket_requests_in_flight_;
   }
 
   // Log request details
-  LOGD << "HTTPLIB Request details:";
-  LOGD << "  Method: " << req.method;
-  LOGD << "  Path: " << req.path;
-  LOGD << "  Headers:";
+  LOGV << "HTTPLIB Request details:";
+  LOGV << "  Method: " << req.method;
+  LOGV << "  Path: " << req.path;
+  LOGV << "  Headers:";
   for (const auto &header : req.headers) {
-    LOGD << "    " << header.first << ": " << header.second;
+    LOGV << "    " << header.first << ": " << header.second;
   }
-  if (!req.body.empty()) { LOGD << "  Body: " << req.body; }
+  if (!req.body.empty()) { LOGV << "  Body: " << req.body; }
 
   // Add default headers to the request
   for (const auto &header : default_headers_) {
     if (req.headers.find(header.first) == req.headers.end()) {
       req.headers.insert(header);
-      LOGD << "HTTPLIB Added default header: " << header.first << ": "
+      LOGV << "HTTPLIB Added default header: " << header.first << ": "
            << header.second;
     }
   }
 
   auto ret = false;
   auto close_connection = !keep_alive_;
-  LOGD << "HTTPLIB close_connection flag set to: " << close_connection;
+  LOGV << "HTTPLIB close_connection flag set to: " << close_connection;
 
   auto se = detail::scope_exit([&]() {
-    LOGD << "HTTPLIB Entering scope_exit cleanup";
+    LOGV << "HTTPLIB Entering scope_exit cleanup";
     // Briefly lock mutex in order to mark that a request is no longer ongoing
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    LOGD << "HTTPLIB Acquired socket mutex for cleanup";
+    LOGV << "HTTPLIB Acquired socket mutex for cleanup";
     socket_requests_in_flight_ -= 1;
-    LOGD << "HTTPLIB Decremented requests in flight to: "
+    LOGV << "HTTPLIB Decremented requests in flight to: "
          << socket_requests_in_flight_;
     if (socket_requests_in_flight_ <= 0) {
       assert(socket_requests_in_flight_ == 0);
       socket_requests_are_from_thread_ = std::thread::id();
-      LOGD << "HTTPLIB Reset socket_requests_are_from_thread_";
+      LOGV << "HTTPLIB Reset socket_requests_are_from_thread_";
     }
 
     if (socket_should_be_closed_when_request_is_done_ || close_connection ||
         !ret) {
-      LOGD << "HTTPLIB Closing socket due to one of the following conditions:";
-      LOGD << "  socket_should_be_closed_when_request_is_done_: "
+      LOGV << "HTTPLIB Closing socket due to one of the following conditions:";
+      LOGV << "  socket_should_be_closed_when_request_is_done_: "
            << socket_should_be_closed_when_request_is_done_;
-      LOGD << "  close_connection: " << close_connection;
-      LOGD << "  ret: " << ret;
+      LOGV << "  close_connection: " << close_connection;
+      LOGV << "  ret: " << ret;
       shutdown_ssl(socket_, true);
       shutdown_socket(socket_);
       close_socket(socket_);
-      LOGD << "HTTPLIB Socket shutdown and closed";
+      LOGV << "HTTPLIB Socket shutdown and closed";
     }
-    LOGD << "HTTPLIB Exiting scope_exit cleanup";
+    LOGV << "HTTPLIB Exiting scope_exit cleanup";
   });
 
-  LOGD << "HTTPLIB Processing socket";
+  LOGV << "HTTPLIB Processing socket";
   ret = process_socket(socket_, [&](Stream &strm) {
-    LOGD << "HTTPLIB Handling request";
+    LOGV << "HTTPLIB Handling request";
     return handle_request(strm, req, res, close_connection, error);
   });
 
@@ -7799,10 +7799,10 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     if (error == Error::Success) { error = Error::Unknown; }
     LOGE << "HTTPLIB Request failed, error: " << static_cast<int>(error);
   } else {
-    LOGD << "HTTPLIB Request succeeded";
+    LOGV << "HTTPLIB Request succeeded";
   }
 
-  LOGD << "HTTPLIB Exiting send_ function";
+  LOGV << "HTTPLIB Exiting send_ function";
   return ret;
 }
 
@@ -9674,17 +9674,17 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
 }
 
 inline bool SSLClient::load_certs() {
-  LOGD << "HTTPLIB Entering SSLClient::load_certs function";
+  LOGV << "HTTPLIB Entering SSLClient::load_certs function";
 
   auto ret = true;
 
   std::call_once(initialize_cert_, [&]() {
-    LOGD << "HTTPLIB Initializing certificates (one-time operation)";
+    LOGV << "HTTPLIB Initializing certificates (one-time operation)";
     std::lock_guard<std::mutex> guard(ctx_mutex_);
-    LOGD << "HTTPLIB Acquired SSL context mutex";
+    LOGV << "HTTPLIB Acquired SSL context mutex";
 
     if (!ca_cert_file_path_.empty()) {
-      LOGD << "HTTPLIB Loading CA certificates from file: "
+      LOGV << "HTTPLIB Loading CA certificates from file: "
            << ca_cert_file_path_;
       if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
                                          nullptr)) {
@@ -9692,11 +9692,11 @@ inline bool SSLClient::load_certs() {
              << ca_cert_file_path_;
         ret = false;
       } else {
-        LOGD << "HTTPLIB Successfully loaded CA certificates from file: "
+        LOGV << "HTTPLIB Successfully loaded CA certificates from file: "
              << ca_cert_file_path_;
       }
     } else if (!ca_cert_dir_path_.empty()) {
-      LOGD << "HTTPLIB Loading CA certificates from directory: "
+      LOGV << "HTTPLIB Loading CA certificates from directory: "
            << ca_cert_dir_path_;
       if (!SSL_CTX_load_verify_locations(ctx_, nullptr,
                                          ca_cert_dir_path_.c_str())) {
@@ -9704,60 +9704,60 @@ inline bool SSLClient::load_certs() {
              << ca_cert_dir_path_;
         ret = false;
       } else {
-        LOGD << "HTTPLIB Successfully loaded CA certificates from directory: "
+        LOGV << "HTTPLIB Successfully loaded CA certificates from directory: "
              << ca_cert_dir_path_;
       }
     } else {
-      LOGD << "HTTPLIB No CA certificate file or directory specified, "
+      LOGV << "HTTPLIB No CA certificate file or directory specified, "
               "attempting to load system certificates";
       auto loaded = false;
 #ifdef _WIN32
-      LOGD << "HTTPLIB Attempting to load system certificates on Windows";
+      LOGV << "HTTPLIB Attempting to load system certificates on Windows";
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
 #if TARGET_OS_OSX
-      LOGD << "HTTPLIB Attempting to load system certificates on macOS";
+      LOGV << "HTTPLIB Attempting to load system certificates on macOS";
       loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
 #endif // TARGET_OS_OSX
 #endif // _WIN32
       if (!loaded) {
-        LOGD << "HTTPLIB Failed to load system certificates, falling back to "
+        LOGV << "HTTPLIB Failed to load system certificates, falling back to "
                 "default verify paths";
         SSL_CTX_set_default_verify_paths(ctx_);
-        LOGD << "HTTPLIB Set default verify paths";
+        LOGV << "HTTPLIB Set default verify paths";
       } else {
-        LOGD << "HTTPLIB Successfully loaded system certificates";
+        LOGV << "HTTPLIB Successfully loaded system certificates";
       }
     }
   });
 
-  LOGD << "HTTPLIB Exiting SSLClient::load_certs function, result: " << ret;
+  LOGV << "HTTPLIB Exiting SSLClient::load_certs function, result: " << ret;
   return ret;
 }
 
 inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
-  LOGD << "HTTPLIB Entering SSLClient::initialize_ssl function";
+  LOGV << "HTTPLIB Entering SSLClient::initialize_ssl function";
 
   auto ssl = detail::ssl_new(
       socket.sock, ctx_, ctx_mutex_,
       [&](SSL *ssl2) {
-        LOGD << "HTTPLIB SSL object created, performing SSL initialization "
+        LOGV << "HTTPLIB SSL object created, performing SSL initialization "
                 "steps";
 
         if (server_certificate_verification_) {
-          LOGD << "HTTPLIB Server certificate verification is enabled";
+          LOGV << "HTTPLIB Server certificate verification is enabled";
           if (!load_certs()) {
             LOGE << "HTTPLIB Failed to load certificates";
             error = Error::SSLLoadingCerts;
             return false;
           }
-          LOGD << "HTTPLIB Certificates loaded successfully";
+          LOGV << "HTTPLIB Certificates loaded successfully";
           SSL_set_verify(ssl2, SSL_VERIFY_NONE, nullptr);
-          LOGD << "HTTPLIB SSL verification set to SSL_VERIFY_NONE";
+          LOGV << "HTTPLIB SSL verification set to SSL_VERIFY_NONE";
         }
 
-        LOGD << "HTTPLIB Attempting SSL connection (non-blocking)";
+        LOGV << "HTTPLIB Attempting SSL connection (non-blocking)";
         if (!detail::ssl_connect_or_accept_nonblocking(
                 socket.sock, ssl2, SSL_connect, connection_timeout_sec_,
                 connection_timeout_usec_)) {
@@ -9765,22 +9765,22 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           error = Error::SSLConnection;
           return false;
         }
-        LOGD << "HTTPLIB SSL connection established successfully";
+        LOGV << "HTTPLIB SSL connection established successfully";
 
         if (server_certificate_verification_) {
-          LOGD << "HTTPLIB Performing server certificate verification";
+          LOGV << "HTTPLIB Performing server certificate verification";
           if (server_certificate_verifier_) {
-            LOGD << "HTTPLIB Using custom server certificate verifier";
+            LOGV << "HTTPLIB Using custom server certificate verifier";
             if (!server_certificate_verifier_(ssl2)) {
               LOGE << "HTTPLIB Custom server certificate verification failed";
               error = Error::SSLServerVerification;
               return false;
             }
-            LOGD << "HTTPLIB Custom server certificate verification succeeded";
+            LOGV << "HTTPLIB Custom server certificate verification succeeded";
           } else {
-            LOGD << "HTTPLIB Using default server certificate verification";
+            LOGV << "HTTPLIB Using default server certificate verification";
             verify_result_ = SSL_get_verify_result(ssl2);
-            LOGD << "HTTPLIB SSL verification result: " << verify_result_;
+            LOGV << "HTTPLIB SSL verification result: " << verify_result_;
 
             if (verify_result_ != X509_V_OK) {
               LOGE << "HTTPLIB Server certificate verification failed, result: "
@@ -9788,11 +9788,11 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
               error = Error::SSLServerVerification;
               return false;
             }
-            LOGD << "HTTPLIB Server certificate verification succeeded";
+            LOGV << "HTTPLIB Server certificate verification succeeded";
 
             auto server_cert = SSL_get1_peer_certificate(ssl2);
             auto se = detail::scope_exit([&] { X509_free(server_cert); });
-            LOGD << "HTTPLIB Retrieved server certificate";
+            LOGV << "HTTPLIB Retrieved server certificate";
 
             if (server_cert == nullptr) {
               LOGE << "HTTPLIB Server certificate is null";
@@ -9801,22 +9801,22 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             }
 
             if (server_hostname_verification_) {
-              LOGD << "HTTPLIB Performing server hostname verification";
+              LOGV << "HTTPLIB Performing server hostname verification";
               if (!verify_host(server_cert)) {
                 LOGE << "HTTPLIB Server hostname verification failed";
                 error = Error::SSLServerHostnameVerification;
                 return false;
               }
-              LOGD << "HTTPLIB Server hostname verification succeeded";
+              LOGV << "HTTPLIB Server hostname verification succeeded";
             }
           }
         }
 
-        LOGD << "HTTPLIB SSL initialization completed successfully";
+        LOGV << "HTTPLIB SSL initialization completed successfully";
         return true;
       },
       [&](SSL *ssl2) {
-        LOGD << "HTTPLIB Setting TLS hostname extension";
+        LOGV << "HTTPLIB Setting TLS hostname extension";
 #if defined(OPENSSL_IS_BORINGSSL)
         SSL_set_tlsext_host_name(ssl2, host_.c_str());
 #else
@@ -9825,12 +9825,12 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         SSL_ctrl(ssl2, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
                  static_cast<void *>(const_cast<char *>(host_.c_str())));
 #endif
-        LOGD << "HTTPLIB TLS hostname extension set to: " << host_;
+        LOGV << "HTTPLIB TLS hostname extension set to: " << host_;
         return true;
       });
 
   if (ssl) {
-    LOGD << "HTTPLIB SSL object initialized successfully";
+    LOGV << "HTTPLIB SSL object initialized successfully";
     socket.ssl = ssl;
     return true;
   }
